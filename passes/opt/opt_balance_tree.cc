@@ -189,11 +189,15 @@ struct OptBalanceTreeWorker {
 				pool<Cell*> sinks;
 				pool<Cell*> current_loads = sig_to_sink[y];
 				pool<Cell*> next_loads;
+				pool<Cell*> visited_forward;
 				while (!current_loads.empty())
 				{
 					// Find each sink and see what they are
 					for (auto x : current_loads)
 					{
+						if (visited_forward.count(x))
+							continue;
+						visited_forward.insert(x);
 						// If not the correct type, don't follow any further
 						// (but add the originating cell to the list of sinks)
 						if (!is_right_type(x, cell_type))
@@ -251,10 +255,14 @@ struct OptBalanceTreeWorker {
 					dict<SigSpec, bool> signeds;
 					int inner_cells = 0;
 					std::deque<Cell*> bfs_queue = {head_cell};
+					pool<Cell*> visited_backward;
 					while (bfs_queue.size())
 					{
 						Cell* x = bfs_queue.front();
 						bfs_queue.pop_front();
+						if (visited_backward.count(x))
+							continue;
+						visited_backward.insert(x);
 
 						for (IdString port: {ID::A, ID::B}) {
 							auto sig = sigmap(x->getPort(port));
