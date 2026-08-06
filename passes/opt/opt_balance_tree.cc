@@ -190,14 +190,18 @@ struct OptBalanceTreeWorker {
 				pool<Cell*> current_loads = sig_to_sink[y];
 				pool<Cell*> next_loads;
 				pool<Cell*> visited_forward;
+				bool forward_cycle = false;
 				while (!current_loads.empty())
 				{
 					// Find each sink and see what they are
 					for (auto x : current_loads)
 					{
-						if (visited_forward.count(x))
-							continue;
+						if (visited_forward.count(x)) {
+							forward_cycle = true;
+							break;
+						}
 						visited_forward.insert(x);
+
 						// If not the correct type, don't follow any further
 						// (but add the originating cell to the list of sinks)
 						if (!is_right_type(x, cell_type))
@@ -223,6 +227,9 @@ struct OptBalanceTreeWorker {
 							next_loads.insert(z);
 					}
 
+					if (forward_cycle)
+						break;
+
 					// If we couldn't find any downstream loads, stop.
 					// Create a reduction for each of the max-length chains we found
 					if (next_loads.empty())
@@ -243,6 +250,9 @@ struct OptBalanceTreeWorker {
 					next_loads.clear();
 				}
 
+				if (forward_cycle)
+					continue;
+
 				// We have our list of sinks, now go tree balance the chains
 				for (auto head_cell : sinks)
 				{
@@ -255,14 +265,12 @@ struct OptBalanceTreeWorker {
 					dict<SigSpec, bool> signeds;
 					int inner_cells = 0;
 					std::deque<Cell*> bfs_queue = {head_cell};
-					pool<Cell*> visited_backward;
+					pool<Cell*> visited_backward = {head_cell};
+					bool backward_cycle = false;
 					while (bfs_queue.size())
 					{
 						Cell* x = bfs_queue.front();
 						bfs_queue.pop_front();
-						if (visited_backward.count(x))
-							continue;
-						visited_backward.insert(x);
 
 						for (IdString port: {ID::A, ID::B}) {
 							auto sig = sigmap(x->getPort(port));
@@ -275,6 +283,11 @@ struct OptBalanceTreeWorker {
 								}
 							}
 							if (drv_ok) {
+								if (visited_backward.count(drv)) {
+									backward_cycle = true;
+									break;
+								}
+								visited_backward.insert(drv);
 								inner_cells++;
 								bfs_queue.push_back(drv);
 							} else {
@@ -282,7 +295,12 @@ struct OptBalanceTreeWorker {
 								signeds[sig] = x->getParam(port == ID::A ? ID::A_SIGNED : ID::B_SIGNED).as_bool();
 							}
 						}
+						if (backward_cycle)
+							break;
 					}
+
+					if (backward_cycle)
+						continue;
 
 					if (inner_cells)
 					{
